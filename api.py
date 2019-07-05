@@ -1,4 +1,5 @@
 from flask import Flask, jsonify
+from flask_cors import cross_origin
 from xml.dom.minidom import parse
 import os
 import re
@@ -130,15 +131,14 @@ def read_xml(files=[]):
                     if name_text:
                         cn = name_text.group(1)
                         ou = get_text(trustee_name)[(name_text.end() - 3):]
-                        print("CN: ", cn, " => OU: ", ou)
+                        # print("CN: ", cn, " => OU: ", ou)
                     else:
                         ou = get_text(trustee_name)
                         # print("OU: ", get_text(trustee_name))
 
                     new_trustee = dict(
                         id=get_text(trustee_id),
-                        uid=cn,
-                        ou=ou.replace(".", ","),
+                        user=dict(uid=cn, ou=ou),
                         # name=get_text(trustee_name),
                         rights=trustee_rights_value,
                         zid=new_file["zid"],
@@ -157,18 +157,53 @@ def read_xml(files=[]):
 app = Flask(__name__)
 
 
+class User:
+
+    def __init__(self, username, group):
+        self.username = username
+        self.group = group
+
+
+class Trustee:
+
+    def __init__(self, id, user, rights, file):
+        self.id = id,
+        self.user = user
+        self.rights = rights
+        self.file = file
+
+
+class File:
+
+    def __init__(self, zid, path):
+        self.zid = zid
+        self.path = path
+        self.trustees = trustees
+
+
+class Volume:
+
+    files: list()
+
+    def __init__(self, files):
+        self.files = files
+
+
 @app.route("/api/files")
+@cross_origin()
 def get_files():
     return jsonify(trustee_info.get("files")), 200
 
 
 @app.route("/api/files/<zid>")
+@cross_origin()
 def get_files_by_zid(zid):
     file = trustee_info.get("files").get(zid) or {}
     return jsonify(file), 200
 
 
 @app.route("/api/files/name/<name>")
+@cross_origin()
 def get_files_by_name(name):
     files = []
     for trust in trustee_info.get("files").values():
@@ -179,11 +214,13 @@ def get_files_by_name(name):
 
 
 @app.route("/api/trustees")
+@cross_origin()
 def get_trustees():
     return jsonify(trustee_info.get("trustees")), 200
 
 
 @app.route("/api/trustees/name/<name>")
+@cross_origin()
 def get_trustee_by_username(name):
     trustees = []
     for trust in trustee_info.get("trustees"):
@@ -195,6 +232,7 @@ def get_trustee_by_username(name):
 
 
 @app.route("/api/trustees/uid/<uid>")
+@cross_origin()
 def get_trustee_by_uid(uid):
     trustees = []
     for trust in trustee_info.get("trustees"):
@@ -205,6 +243,7 @@ def get_trustee_by_uid(uid):
 
 
 @app.route("/api/volumes")
+@cross_origin()
 def get_volumes():
     return jsonify(trustee_info.get("volumes")), 200
 
