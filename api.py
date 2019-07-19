@@ -42,7 +42,8 @@ def get_files_from_xml(dom, tag_name):
 
 volumes = dict(adm="1", ged="2", jur="3")
 
-trustee_info = dict(volumes=volumes, files=dict(), trustees=[])
+# trustee_info = dict(volumes=volumes, files=dict(), trustees=[])
+trustee_info = dict(volumes=volumes, files=dict(), trustees=dict())
 
 
 def handleFile(file):
@@ -104,18 +105,18 @@ def read_xml(files=[]):
                     "path": get_text(path)
                 }
 
-                if len(inheritedRightsFilter):
-                    new_file["inheritedRightsFilter"] = inheritedRightsFilter[0].getAttribute(
-                        "value")
+                # if len(inheritedRightsFilter):
+                #     new_file["inheritedRightsFilter"] = inheritedRightsFilter[0].getAttribute(
+                #         "value")
 
                 # new_file = handleFile(f)
                 # new_file["volume"] = volume_name.upper()
 
                 trustee_info.get("files")[new_zid] = new_file
 
+                
+                # Getting data to each trustee
                 trustees = f.getElementsByTagName("trustee")
-
-                # print(len(trustees))
 
                 for trustee in trustees:
 
@@ -124,27 +125,43 @@ def read_xml(files=[]):
                     trustee_rights = trustee.getElementsByTagName("rights")[0]
                     trustee_rights_value = trustee_rights.getAttribute("value")
 
-                    name_text = re.search(
-                        '.CN=(.*?).OU', get_text(trustee_name))
-                    cn = ""
-                    ou = ""
-                    if name_text:
-                        cn = name_text.group(1)
-                        ou = get_text(trustee_name)[(name_text.end() - 3):]
-                        # print("CN: ", cn, " => OU: ", ou)
-                    else:
-                        ou = get_text(trustee_name)
-                        # print("OU: ", get_text(trustee_name))
+                    # name_text = re.search(
+                    #     '.CN=(.*?).OU', get_text(trustee_name))
+                    # cn = ""
+                    # ou = ""
+                    # if name_text:
+                    #     cn = name_text.group(1)
+                    #     ou = get_text(trustee_name)[(name_text.end() - 3):]
+                    #     # print("CN: ", cn, " => OU: ", ou)
+                    # else:
+                    #     ou = get_text(trustee_name)
+                    #     # print("OU: ", get_text(trustee_name))
 
-                    new_trustee = dict(
-                        id=get_text(trustee_id),
-                        user=dict(uid=cn, ou=ou),
-                        # name=get_text(trustee_name),
-                        rights=trustee_rights_value,
-                        zid=new_file["zid"],
-                        volume=new_file["volume"])
 
-                    trustee_info.get("trustees").append(new_trustee)
+                    trustee_id = get_text(trustee_id)
+
+                    if trustee_id not in trustee_info.get("trustees"):
+                        trustee_info.get("trustees")[trustee_id] = {
+                            "id": trustee_id, 
+                            "name": get_text(trustee_name),
+                            "files": []
+                        }                        
+
+                    # new_trustee = dict(new_zid=trustee_rights_value)
+                    current_file = { "zid": new_zid, "rights": trustee_rights_value}
+
+
+
+                    # new_trustee = dict(
+                    #     id=get_text(trustee_id),
+                    #     user=dict(uid=cn, ou=ou),
+                    #     # name=get_text(trustee_name),
+                    #     rights=trustee_rights_value,
+                    #     zid=new_file["zid"],
+                    #     volume=new_file["volume"])
+
+                    trustee_info.get("trustees").get(trustee_id)["files"].append(current_file)
+                    # trustee_info.get("trustees").update(current_file)
 
             except IndexError as e:
                 print(e)
@@ -153,6 +170,11 @@ def read_xml(files=[]):
 
         # __trustee_info[volume_name] = dom
 
+def get_all_files():
+    return trustee_info.get("files")
+
+def get_all_trustees():
+    return trustee_info.get("trustees")
 
 app = Flask(__name__)
 
@@ -206,40 +228,87 @@ def get_files_by_zid(zid):
 @cross_origin()
 def get_files_by_name(name):
     files = []
-    for trust in trustee_info.get("files").values():
-        found = re.search(name.lower(), trust.get("path").lower())
+    for file in trustee_info.get("files").values():
+        found = re.search(name.lower(), file.get("path").lower())
         if found:
-            files.append(trust)
+            files.append(file)
+    return jsonify(files), 200
+
+
+@app.route("/api/files/volume/<volume>")
+@cross_origin()
+def get_files_by_volume(volume):
+    files = []
+    for file in trustee_info.get("files").values():
+        if file.get("volume") == volume.upper():
+            files.append(file)
     return jsonify(files), 200
 
 
 @app.route("/api/trustees")
 @cross_origin()
 def get_trustees():
-    return jsonify(trustee_info.get("trustees")), 200
+    return jsonify(get_all_trustees()), 200
 
 
 @app.route("/api/trustees/name/<name>")
 @cross_origin()
-def get_trustee_by_username(name):
-    trustees = []
-    for trust in trustee_info.get("trustees"):
-        # found = re.search(name, trust.get("name"))
-        found = re.search(name, trust.get("uid"))
-        if found:
-            trustees.append(trust)
-    return jsonify(trustees), 200
+def get_files_by_user(name):
+    trustees_files = []
+    result = {}
+    for trustee in get_all_trustees().values():
+        try:
+            found = re.search(name.lower(), trustee.get("name").lower())
+            if(found):
+                files = list()
+                for file in trustee.get("files"):
+                    current_file = get_all_files().get(file.get("zid"))
+                    current_file["rights"] = file.get("rights")
+                    files.append(current_file)
+                trustee["files"] = files
+                trustees_files.append(trustee)
+        except Exception as e:
+            print("# Exception: ", e)
+    return jsonify(trustees_files), 200
 
 
-@app.route("/api/trustees/uid/<uid>")
-@cross_origin()
-def get_trustee_by_uid(uid):
-    trustees = []
-    for trust in trustee_info.get("trustees"):
-        found = re.match(uid, trust.get("uid"))
-        if found:
-            trustees.append(trust)
-    return jsonify(trustees), 200
+# @app.route("/api/trustees/name/<name>")
+# @cross_origin()
+# def get_trustee_by_username(name):
+#     trustees = []
+#     for trust in trustee_info.get("trustees"):
+#         found = re.search(name, trust.get("name"))
+#         found = re.search(name, trust.get("uid"))
+#         if found:
+#             trustees.append(trust)
+#     return jsonify(trustees), 200
+
+
+# @app.route("/api/trustees/uid/<uid>")
+# @cross_origin()
+# def get_trustee_by_uid(uid):
+#     trustees = []
+#     for trust in trustee_info.get("trustees"):
+#         found = re.match(uid, trust.get("uid"))
+#         if found:
+#             trustees.append(trust)
+#     return jsonify(trustees), 200
+
+# @app.route("/api/trustees/name/<name>")
+# @cross_origin()
+# def get_trustee_by_username(name):
+#     trustees = []
+#     for trustee in trustee_info.get("trustees").values():
+#         print("=> ", trustee.get("name"), "\n")
+#     return jsonify(trustees or {}), 200
+
+
+# @app.route("/api/trustees/uid/<uid>")
+# @cross_origin()
+# def get_trustee_by_uid(uid):
+#     trustees = trustee_info.get("trustees").get(uid) or {}
+#     return jsonify(trustees), 200
+
 
 
 @app.route("/api/volumes")
